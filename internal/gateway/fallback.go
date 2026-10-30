@@ -1017,13 +1017,21 @@ func restLast(out []candidate, pl planned) ([]candidate, planned) {
 // a real answer, and nothing about the request's own content or model
 // rests a member (only the model, by restID), so it isn't left out over
 // those. The trace keeps every member, the resting ones with their rest.
+//
+// A rest whose end was named, by the vendor or the user ("resets") or by
+// the allowance window it filled ("window"), isn't probed: the member
+// can't be back before then, and a reading finding the window started
+// again lifts the rest (renewed), so asking it only waits for a refusal
+// (a Kiro account at 100% of its month asked, 3 s each, by every request
+// whose other members refused). It is asked only when no other candidate
+// is left, the soonest of those back first.
 func probeOne(cs []candidate) []candidate {
 	if len(cs) < 2 {
 		return cs
 	}
-	soonest := -1
-	var until time.Time
-	rests := 0
+	soonest, soonestNamed := -1, -1
+	var until, untilNamed time.Time
+	rests, named := 0, 0
 	rest := make([]bool, len(cs))
 	for i, c := range cs {
 		r, ok := restOf(c.restKey())
@@ -1034,12 +1042,22 @@ func probeOne(cs []candidate) []candidate {
 			continue
 		}
 		rests, rest[i] = rests+1, true
+		if restEndNamed(r) {
+			named++
+			if soonestNamed < 0 || r.Until.Before(untilNamed) {
+				soonestNamed, untilNamed = i, r.Until
+			}
+			continue
+		}
 		if soonest < 0 || r.Until.Before(until) {
 			soonest, until = i, r.Until
 		}
 	}
-	if rests < 2 {
+	if rests-named < 2 && named == 0 {
 		return cs
+	}
+	if rests == len(cs) && soonest < 0 {
+		soonest = soonestNamed // nobody else: a real answer, from the one back first
 	}
 	out := make([]candidate, 0, len(cs)-rests+1)
 	for i, c := range cs {
@@ -1048,6 +1066,13 @@ func probeOne(cs []candidate) []candidate {
 		}
 	}
 	return out
+}
+
+// restEndNamed is whether a rest ends at a time the vendor, the user or an
+// allowance reading named, rather than one magpie guessed: the member
+// isn't back before it, unless a reading lifts it (renewed).
+func restEndNamed(r Rest) bool {
+	return r.By == "resets" || r.By == "window"
 }
 
 // restingOf is why c rests, by its own key or else its provider's, while
