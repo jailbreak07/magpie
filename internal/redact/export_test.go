@@ -15,4 +15,5 @@ func Forget() {
 	reindexKnown()
 	mu.Unlock()
 	resetSent()
+	rulesMemo.reset()
 }

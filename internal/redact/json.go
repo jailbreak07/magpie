@@ -382,6 +382,7 @@ func jsonEscape(s string) string {
 // Anthropic answers 400 "Invalid `signature` in `thinking` block".
 func MaskJSON(body []byte, o Options) ([]byte, int) {
 	o.sent = true
+	o.rulesKey = rulesPrint(o)
 	signed, args, defs := scan(body)
 	masked := func(path, key, s string) bool {
 		return !keepIn(path, key, s, args, defs) && (signed == nil || !under(path, signed))

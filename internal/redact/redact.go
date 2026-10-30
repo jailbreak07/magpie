@@ -85,6 +85,9 @@ type Options struct {
 	// sent is masking for a vendor (Mask, MaskJSON): a text masked
 	// before has the known values it had then (sentKnownSpans)
 	sent bool
+	// rulesKey is rulesPrint of o, made once for a request's strings
+	// (MaskJSON); "" has memoRuleSpans make it
+	rulesKey string
 }
 
 // covers says o masks what a rule of category cat finds: "" are the
@@ -927,7 +930,39 @@ func mask(raw string, o Options, put func(kind, v string) string, escaped bool) 
 		s = unescapedView(raw)
 		put = unescapedPut(put)
 	}
+	found := memoRuleSpans(s, o)
+	return maskRest(raw, s, found, o, put, escaped)
+}
+
+// maskRest is mask past the rules: the model's and the known values, the
+// filters and apply. found are the rules' spans of s (ruleSpans), which
+// it may append to.
+func maskRest(raw, s string, found []span, o Options, put func(kind, v string) string, escaped bool) (string, int) {
+	// after the rules', so where a rule finds the same value it keeps the
+	// kind it has always had
+	found = append(found, modelSpans(raw, o)...) // the model was asked about raw
+	if o.sent {
+		found = append(found, sentKnownSpans(s, o)...)
+	} else {
+		found = append(found, knownSpans(s, o)...)
+	}
+	if escaped {
+		found = inStrings(raw, outsideEscapes(raw, found))
+	}
+	found = noNumbers(s, noIDs(s, found))
+	if o.sent {
+		noteScores(raw, found) // what is masked for a vendor, not a preview
+	}
+	return apply(raw, found, put, o)
+}
+
+// ruleSpans are what the user's words and the rules (the user's and
+// magpie's) find in s, the text the finders read. They depend on s and
+// on the options rulesPrint takes in alone, and on the day (a birthday is
+// a date over a year ago), so they can be remembered (memo.go).
+func ruleSpans(s string, o Options) []span {
 	var found []span
+	var sh *textShape
 	for _, w := range o.Words {
 		if w = strings.TrimSpace(w); len(w) < 2 {
 			continue
@@ -973,7 +1008,6 @@ func mask(raw string, o Options, put func(kind, v string) string, escaped bool) 
 		all = append(customRules(o.Rules), rules...)
 	}
 	lower := ""
-	var sh *textShape
 	// split are matches a rule took apart into values of their own
 	// (rkato@box17 as a user and a host): what another rule found from
 	// the same place in them, an email, goes
@@ -1043,22 +1077,7 @@ func mask(raw string, o Options, put func(kind, v string) string, escaped bool) 
 			return f.kind == "EMAIL" && f.start == sp.start && f.end <= sp.end
 		})
 	}
-	// after the rules', so where a rule finds the same value it keeps the
-	// kind it has always had
-	found = append(found, modelSpans(raw, o)...) // the model was asked about raw
-	if o.sent {
-		found = append(found, sentKnownSpans(s, o)...)
-	} else {
-		found = append(found, knownSpans(s, o)...)
-	}
-	if escaped {
-		found = inStrings(raw, outsideEscapes(raw, found))
-	}
-	found = noNumbers(s, noIDs(s, found))
-	if o.sent {
-		noteScores(raw, found) // what is masked for a vendor, not a preview
-	}
-	return apply(raw, found, put, o)
+	return found
 }
 
 // unescapedView is s, JSON text, as long as s and read as the vendor reads
