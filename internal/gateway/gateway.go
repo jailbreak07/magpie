@@ -2612,6 +2612,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 	// the key or subscription account the last try went to (#557)
 	providerKeyID, providerKeyName, providerAccount := "", "", ""
 	var other *Try                    // the first failure that wasn't an allowance run out
+	var firstRefusal *Try             // the first refusal, kept apart from other so the last try isn't held for it (#4031)
 	var forbade []forbidden           // the plain 403s rested so far (forbiddenAlike)
 	autoReset := resetFirst != nil    // a Codex or Claude reset looked at, once a request
 	creditsAsked := map[string]bool{} // Codex accounts asked again onto their credits, once each (creditsAgain)
@@ -3354,6 +3355,9 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 			// this one isn't set aside, as nothing is wrong with it, and
 			// what the refusal cost is logged on its own
 			try.Fail = failRefused
+			if firstRefusal == nil {
+				firstRefusal = &Try{Status: refusedStatus, Error: call.Error}
+			}
 			s.trace.update(tr, func(t *Route) {
 				t.Tries[len(t.Tries)-1] = try
 				if call.To != "" {
@@ -3891,12 +3895,18 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 			// same (#1425). The account isn't at fault, and doesn't rest
 			call.Status = turnedAwayStatus
 			failTo(w, kept, from, call.Status, call.Error)
-		} else if f := failure(call.Status, []byte(call.Error)); other != nil && !hw.passing && call.Status >= 400 && (f == failQuota || f == failCredit) {
+		} else if f := failure(call.Status, []byte(call.Error)); (other != nil || firstRefusal != nil) && !hw.passing && call.Status >= 400 && (f == failQuota || f == failCredit) {
 			// the last one left is out of its allowance, but one before it
 			// failed otherwise: the agent is told that one's error, not
 			// the allowance's — Codex, told its usage is exhausted, stops
 			// taking input though another member would answer next time
-			// (Discord, waroy)
+			// (Discord, waroy). A refusal is such a failure too: the agent
+			// is told it was refused, not that its allowance or sign-in is
+			// at fault (#4031). Nothing of the last reply went out
+			// (!hw.passing), so the refusal is told without having held it
+			if other == nil {
+				other = firstRefusal
+			}
 			try.Fail, try.Earlier = f, true
 			s.trace.update(tr, func(t *Route) { t.Tries[len(t.Tries)-1] = try })
 			call.Status, call.Error = other.Status, other.Error
