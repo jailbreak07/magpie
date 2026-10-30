@@ -91,7 +91,7 @@ var moreRules = []rule{
 		fold: []string{"passport", "reisepass", "护照", "護照", "パスポート"}, back: 8, ahead: 80},
 
 	// an IBAN, as one word or printed in groups of four, by its checksum
-	{kind: "IBAN", cat: "iban", re: regexp.MustCompile(`[A-Z]{2}\d{2}(?:[A-Z0-9]{11,30}|(?: [A-Z0-9]{4}){2,7}(?: [A-Z0-9]{1,3})?)`), bound: alnum, fix: ibanAt},
+	{kind: "IBAN", cat: "iban", digitRun: 2, re: regexp.MustCompile(`[A-Z]{2}\d{2}(?:[A-Z0-9]{11,30}|(?: [A-Z0-9]{4}){2,7}(?: [A-Z0-9]{1,3})?)`), bound: alnum, fix: ibanAt},
 
 	// a date after the words that say it is a birthday; a date alone is not
 	{kind: "BIRTHDAY", cat: "birthday", bound: digits, ok: dateOK,
@@ -103,7 +103,7 @@ var moreRules = []rule{
 
 	// a MAC address, aa:bb:cc:dd:ee:ff or aa-bb-cc-dd-ee-ff; not a piece of
 	// an IPv6 address or a certificate's fingerprint
-	{kind: "MAC", cat: "mac", re: regexp.MustCompile(`[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}|[0-9A-Fa-f]{2}(?:-[0-9A-Fa-f]{2}){5}`), bound: alnum + ":-", ok: macOK},
+	{kind: "MAC", cat: "mac", anyOf: ":-", re: regexp.MustCompile(`[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}|[0-9A-Fa-f]{2}(?:-[0-9A-Fa-f]{2}){5}`), bound: alnum + ":-", ok: macOK},
 
 	// a serial number after S/N, Serial or 序列号, and a separator; not
 	// "serial port" or Serial.println

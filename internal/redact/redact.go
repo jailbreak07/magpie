@@ -130,6 +130,12 @@ type rule struct {
 	back, ahead int
 	// cat is what turns the rule on (Options.covers): "" the secrets
 	cat string
+	// digitRun and anyOf, for a rule with no marker that would otherwise
+	// run over every text: the longest run of ASCII digits a text needs
+	// for the pattern to match in it at all, and bytes of which it needs
+	// one (textShape). A text without them is passed over unread.
+	digitRun int
+	anyOf    string
 	// yours is a rule the user wrote (customRules)
 	yours bool
 	// anyGroup takes the first group that matched, for a pattern with a
@@ -191,9 +197,9 @@ var rules = append([]rule{
 		fold: cjkCopulas, back: 24, ahead: 260, at: keyAt},
 
 	{kind: "EMAIL", re: regexp.MustCompile(`[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}`), markers: []string{"@"}, bound: alnum + "_%+-", ok: realEmail, at: emailAt, cat: catPersonal},
-	{kind: "ID_CARD", re: regexp.MustCompile(`[1-9]\d{5}(?:18|19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]`), bound: alnum, ok: chineseID, cat: catPersonal},
-	{kind: "PHONE", re: regexp.MustCompile(`(?:\+?86[- ]?)?1[3-9]\d{9}`), bound: alnum, at: phoneAt, cat: catPersonal},
-	{kind: "BANK_CARD", re: regexp.MustCompile(`[3-6]\d{3}(?:[ -]?\d{4}){2,3}(?:[ -]?\d{1,3})?`), bound: alnum, ok: luhn, cat: catPersonal},
+	{kind: "ID_CARD", digitRun: 17, re: regexp.MustCompile(`[1-9]\d{5}(?:18|19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]`), bound: alnum, ok: chineseID, cat: catPersonal},
+	{kind: "PHONE", digitRun: 11, re: regexp.MustCompile(`(?:\+?86[- ]?)?1[3-9]\d{9}`), bound: alnum, at: phoneAt, cat: catPersonal},
+	{kind: "BANK_CARD", digitRun: 4, re: regexp.MustCompile(`[3-6]\d{3}(?:[ -]?\d{4}){2,3}(?:[ -]?\d{1,3})?`), bound: alnum, ok: luhn, cat: catPersonal},
 }, moreRules...)
 
 // cjkPasswordNames are what a password is called in Chinese, Japanese and
@@ -967,6 +973,7 @@ func mask(raw string, o Options, put func(kind, v string) string, escaped bool) 
 		all = append(customRules(o.Rules), rules...)
 	}
 	lower := ""
+	var sh *textShape
 	// split are matches a rule took apart into values of their own
 	// (rkato@box17 as a user and a host): what another rule found from
 	// the same place in them, an email, goes
@@ -974,6 +981,14 @@ func mask(raw string, o Options, put func(kind, v string) string, escaped bool) 
 	for _, r := range all {
 		if !o.covers(r.cat) {
 			continue
+		}
+		if (r.digitRun > 0 || r.anyOf != "") && !ruleGateOff.Load() {
+			if sh == nil {
+				sh = shapeOfText(s)
+			}
+			if sh.digitRun < r.digitRun || r.anyOf != "" && !sh.hasAny(r.anyOf) {
+				continue
+			}
 		}
 		if len(r.markers) > 0 && !containsAny(s, r.markers) {
 			continue
